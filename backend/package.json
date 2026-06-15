@@ -1,0 +1,29 @@
+{
+  "name": "roadwatch-v2-backend",
+  "version": "2.0.0",
+  "description": "RoadWatch v2 Backend — Tamil Nadu Road Damage Management System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.17.1",
+    "multer": "^2.0.2",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^9.0.0",
+    "sharp": "^0.34.3",
+    "socket.io": "^4.8.3"
+  }
+}
