@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../auth';
 import API_BASE_URL from '../../config';
-import { classifyImage, getModelStatus } from '../../utils/roadDamageModel';
+import { analyzeImage, getModelStatus } from '../../utils/roadDamageModel';
 
 const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 const SEV_CONFIG = {
@@ -102,39 +102,75 @@ function AiResultCard({ aiResult, onOverride, overrideConfirmed }) {
     );
   }
 
-  // ── 3. Verified: damage found ───────────────────────────────────────────────
+  // ── 3. Verified: damage found ────────────────────────────────────────────────
   if (category === 'verified') {
-    const typeColors = {
-      Pothole:               ['#dc2626', '#fef2f2', '#fecaca'],
-      Crack:                 ['#ea580c', '#fff7ed', '#fed7aa'],
-      'Surface Damage':      ['#d97706', '#fffbeb', '#fde68a'],
-      Waterlogging:          ['#0891b2', '#ecfeff', '#a5f3fc'],
-      'Construction Damage': ['#7c3aed', '#faf5ff', '#e9d5ff'],
+    const TYPE_META = {
+      'Pothole':             { icon: '🕳️', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+      'Crack':               { icon: '💥', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
+      'Surface Damage':      { icon: '🪊', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+      'Waterlogging':        { icon: '💧', color: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' },
+      'Construction Damage': { icon: '🚧', color: '#7c3aed', bg: '#faf5ff', border: '#e9d5ff' },
+      'No Damage':           { icon: '✅',    color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
     };
-    const [tc, tbg, tbd] = typeColors[aiResult.damageType] || ['#2563eb', '#eff6ff', '#bfdbfe'];
+    const meta = TYPE_META[aiResult.damageType] || { icon: '🛣️', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+    const top3 = aiResult.top3 || [];
+    const hasTop3 = top3.length > 1;
 
     return (
       <div style={{ borderRadius: 14, border: '2px solid #bbf7d0', background: '#f0fdf4', padding: '1.25rem', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: hasTop3 ? '1rem' : 0 }}>
           <div style={{ fontSize: '1.75rem', flexShrink: 0 }}>✅</div>
           <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-              <p style={{ fontWeight: 800, color: '#15803d', fontSize: '0.9375rem', margin: 0 }}>Road damage detected</p>
-              {aiResult.damageType && aiResult.damageType !== 'Unknown' && (
-                <span style={{ background: tbg, color: tc, border: `1px solid ${tbd}`, borderRadius: 999, padding: '3px 12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                  {aiResult.damageType}
-                </span>
-              )}
-            </div>
-            <p style={{ fontSize: '0.8125rem', color: '#166534', lineHeight: 1.6, margin: 0 }}>
-              The image appears to show road damage. Proceed to the next step.
-            </p>
+            <p style={{ fontWeight: 800, color: '#15803d', fontSize: '0.9375rem', marginBottom: 8 }}>Road damage detected</p>
+            {aiResult.damageType && aiResult.damageType !== 'Unknown' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: meta.bg, color: meta.color, border: `1.5px solid ${meta.border}`,
+                borderRadius: 999, padding: '4px 14px', fontSize: '0.8125rem', fontWeight: 700 }}>
+                <span>{meta.icon}</span>
+                {aiResult.damageType}
+                {aiResult.source === 'keras_classifier' && (
+                  <span style={{ fontSize: '0.625rem', opacity: 0.75, marginLeft: 2 }}>· AI</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
+
+        {hasTop3 && (
+          <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #dcfce7', padding: '0.875rem' }}>
+            <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803d', marginBottom: 8 }}>
+              🤖 AI Damage Type Analysis
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {top3.map((item, i) => {
+                const m = TYPE_META[item.label] || { icon: '🛣️', color: '#64748b' };
+                const pct = Math.round(item.confidence * 100);
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 20, textAlign: 'center' }}>{m.icon}</span>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: i === 0 ? 700 : 500,
+                      color: i === 0 ? '#0f172a' : '#64748b', flex: 1 }}>
+                      {item.label}
+                    </span>
+                    <div style={{ width: 80, height: 6, background: '#e2e8f0', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: m.color,
+                        borderRadius: 999, transition: 'width 0.6s ease' }} />
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b', width: 34, textAlign: 'right' }}>{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {!hasTop3 && (
+          <p style={{ fontSize: '0.8125rem', color: '#166534', lineHeight: 1.6, margin: 0 }}>
+            The image shows road damage. Proceed to the next step.
+          </p>
+        )}
       </div>
     );
   }
-
   return null;
 }
 
@@ -194,50 +230,76 @@ export default function ReportForm({ auth }) {
       setImage(b64);
       setAiLoading(true);
       try {
-        // ── Stage 1: Keras model (browser) — road vs not-road ───────────────
-        let kerasResult = null;
+                // AI Analysis: road filter + damage type classifier (single /analyze call)
+        let aiAnalysis = null;
         try {
-          kerasResult = await classifyImage(b64);
+          aiAnalysis = await analyzeImage(b64);
         } catch (modelErr) {
-          console.warn('[Model] Keras model inference failed, using heuristic only:', modelErr.message);
+          console.warn('[AI] Model server error:', modelErr.message);
         }
 
-        // If the Keras model confidently says NOT a road image → hard block
-        if (kerasResult && !kerasResult.fallback && !kerasResult.isRoad && kerasResult.confidence > 0.6) {
+        // Stage 1: Road filter — block non-road images
+        if (aiAnalysis && !aiAnalysis.fallback && !aiAnalysis.isRoad && aiAnalysis.filterConfidence > 0.6) {
           setAiResult({
             valid: false,
             damageType: 'Invalid Image',
-            confidence: kerasResult.confidence,
-            reason: `Our road damage AI model is ${Math.round(kerasResult.confidence * 100)}% confident this is not a road photo. Please upload a clear image of the damaged road surface.`,
-            source: 'keras',
-            kerasLabel: kerasResult.label,
+            confidence: aiAnalysis.filterConfidence,
+            reason: "This doesn't look like a road photo. Please upload a clear photo of the road surface.",
+            source: 'keras_filter',
           });
           setAiLoading(false);
-          return; // Stop here — don't proceed to heuristic
+          return;
         }
 
-        // ── Stage 2: Heuristic (backend) — damage type classification ───────
-        const res = await fetch(`${API_BASE_URL}/api/ai/verify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: b64 }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Merge keras verdict into result
-          const merged = {
-            ...data,
-            source: 'heuristic',
-            kerasVerified: kerasResult?.isRoad ?? null,
-            kerasConfidence: kerasResult?.confidence ?? null,
-            // If keras says road + heuristic says damage → boost confidence
-            confidence: kerasResult?.isRoad
-              ? Math.min(0.99, data.confidence + 0.08)
-              : data.confidence,
-          };
-          setAiResult(merged);
-          if (merged.valid && merged.damageType && !['Invalid Image','No Damage','Unknown'].includes(merged.damageType)) {
-            setDamageType(merged.damageType);
+        // Stage 2: Damage type from AI classifier
+        const classifierDamageType = aiAnalysis?.damageType && aiAnalysis.damageType !== 'No Damage'
+          ? aiAnalysis.damageType : null;
+        const classifierTop3 = aiAnalysis?.top3 || [];
+
+        // Also call heuristic backend for fallback validation
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/ai/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: b64 }),
+          });
+          if (res.ok) {
+            const heurData = await res.json();
+            const finalDamageType = classifierDamageType || heurData.damageType || 'Unknown';
+            const merged = {
+              ...heurData,
+              damageType: finalDamageType,
+              source: aiAnalysis && !aiAnalysis.fallback ? 'keras_classifier' : 'heuristic',
+              kerasVerified: aiAnalysis?.isRoad ?? null,
+              kerasConfidence: aiAnalysis?.filterConfidence ?? null,
+              damageConfidence: aiAnalysis?.damageConfidence || 0,
+              top3: classifierTop3,
+              confidence: aiAnalysis?.isRoad
+                ? Math.min(0.99, (heurData.confidence || 0.5) + 0.08)
+                : (heurData.confidence || 0.5),
+            };
+            setAiResult(merged);
+            if (merged.valid && finalDamageType && !['Invalid Image','No Damage','Unknown'].includes(finalDamageType)) {
+              setDamageType(finalDamageType);
+            }
+          }
+        } catch (_heurErr) {
+          // Heuristic unavailable — use classifier result only
+          if (aiAnalysis && !aiAnalysis.fallback) {
+            const finalDamageType = classifierDamageType || 'Unknown';
+            const isValid = aiAnalysis.isRoad && finalDamageType !== 'No Damage';
+            setAiResult({
+              valid: isValid,
+              damageType: finalDamageType,
+              confidence: aiAnalysis.damageConfidence || aiAnalysis.filterConfidence || 0.5,
+              reason: isValid ? 'Road damage detected by AI.' : 'No significant damage detected.',
+              source: 'keras_classifier',
+              top3: classifierTop3,
+              kerasVerified: aiAnalysis.isRoad,
+              kerasConfidence: aiAnalysis.filterConfidence,
+              damageConfidence: aiAnalysis.damageConfidence || 0,
+            });
+            if (isValid) setDamageType(finalDamageType);
           }
         }
       } catch (err) {

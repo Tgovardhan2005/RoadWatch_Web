@@ -10,8 +10,16 @@ export default defineConfig({
         target: 'http://localhost:5002',
         changeOrigin: true,
       },
-      // Python Keras model inference server
+      // Python AI model server — road filter + damage classifier
       '/predict': {
+        target: 'http://localhost:5003',
+        changeOrigin: true,
+      },
+      '/classify-damage': {
+        target: 'http://localhost:5003',
+        changeOrigin: true,
+      },
+      '/analyze': {
         target: 'http://localhost:5003',
         changeOrigin: true,
       },
