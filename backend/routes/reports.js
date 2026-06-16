@@ -106,38 +106,125 @@ router.get('/:id', async (req, res) => {
 // POST /api/reports
 router.post('/', requireAuth(), async (req, res) => {
   try {
-    const { description, imageUrl, location, severity, address, damageType, aiConfidence, aiVerified, repairImageUrl } = req.body;
+    const {
+      description, imageUrl, location, severity,
+      address, damageType, aiConfidence, aiVerified, repairImageUrl,
+    } = req.body;
 
     if (!description || !location?.latitude || !location?.longitude) {
       return res.status(400).json({ message: 'Description and valid location required' });
     }
 
+    // Resolve district
     const districts = await District.find({ boundary: { $ne: null } }).lean();
     const matchedDistrict = findDistrictByCoords(location.latitude, location.longitude, districts);
 
-    const nearbyReports = await Report.find({
+    // Look for existing UNRESOLVED report within 100m (rough bounding box ~0.001 deg = 111m)
+    const nearbyUnresolved = await Report.find({
       status: { $nin: ['Resolved', 'Closed', 'Rejected'] },
-      'location.latitude': { $gte: location.latitude - 0.0005, $lte: location.latitude + 0.0005 },
-      'location.longitude': { $gte: location.longitude - 0.0005, $lte: location.longitude + 0.0005 },
+      'location.latitude':  { $gte: location.latitude  - 0.001, $lte: location.latitude  + 0.001 },
+      'location.longitude': { $gte: location.longitude - 0.001, $lte: location.longitude + 0.001 },
     }).lean();
 
-    const duplicates = nearbyReports.filter(r =>
-      haversineDistance(location.latitude, location.longitude, r.location.latitude, r.location.longitude) < 50
-    );
+    // Find closest one within exactly 100m, excluding same user and already-confirmed
+    let closestReport = null;
+    let closestDist = Infinity;
+    for (const r of nearbyUnresolved) {
+      if (r.userId.toString() === req.user.id) continue;
+      const alreadyConfirmed = (r.confirmations || []).some(
+        c => c.userId?.toString() === req.user.id
+      );
+      if (alreadyConfirmed) continue;
 
+      const dist = haversineDistance(
+        location.latitude, location.longitude,
+        r.location.latitude, r.location.longitude
+      );
+      if (dist < 100 && dist < closestDist) {
+        closestDist = dist;
+        closestReport = r;
+      }
+    }
+
+    // MERGE into existing report
+    if (closestReport) {
+      const parentReport = await Report.findById(closestReport._id);
+      if (!parentReport) return res.status(404).json({ message: 'Parent report not found' });
+
+      parentReport.confirmations.push({
+        userId:      req.user.id,
+        userName:    req.user.name || req.user.email || 'Anonymous',
+        description: description || '',
+        imageUrl:    imageUrl || '',
+        severity:    severity || 'Medium',
+        damageType:  damageType || 'Unknown',
+        location,
+        aiConfidence: aiConfidence || 0,
+        submittedAt:  new Date(),
+      });
+      parentReport.confirmationCount = parentReport.confirmations.length;
+
+      // Escalate severity if new report is higher
+      const SEV = { Low: 1, Medium: 2, High: 3, Critical: 4 };
+      if ((SEV[severity] || 0) > (SEV[parentReport.severity] || 0)) {
+        parentReport.statusHistory.push({
+          oldStatus: parentReport.status,
+          newStatus: parentReport.status,
+          updatedByName: 'System',
+          note: `Severity escalated to ${severity} after ${parentReport.confirmationCount} confirmation(s)`,
+        });
+        parentReport.severity = severity;
+      }
+
+      await parentReport.save();
+
+      // Notify district admin
+      if (matchedDistrict?.adminId) {
+        await createNotification(
+          matchedDistrict.adminId,
+          `Report "${parentReport.description.slice(0, 50)}..." confirmed by ${parentReport.confirmationCount} additional user(s) (${Math.round(closestDist)}m away).`,
+          'new_report', parentReport._id, req.io
+        );
+      }
+      // Notify original reporter
+      await createNotification(
+        parentReport.userId,
+        `Your road damage report has been confirmed by ${parentReport.confirmationCount} other user(s) nearby.`,
+        'status_changed', parentReport._id, req.io
+      );
+
+      if (req.io) {
+        req.io.to(`district_${parentReport.districtId}`).emit('report_confirmed', {
+          reportId: parentReport._id, confirmationCount: parentReport.confirmationCount,
+        });
+        req.io.to('super_admin').emit('report_confirmed', {
+          reportId: parentReport._id, confirmationCount: parentReport.confirmationCount,
+        });
+      }
+
+      return res.status(200).json({
+        merged: true,
+        parentReportId: parentReport._id,
+        confirmationCount: parentReport.confirmationCount,
+        distanceMeters: Math.round(closestDist),
+        message: `Your report has been merged with an existing report ${Math.round(closestDist)}m away. Thank you for confirming this issue!`,
+      });
+    }
+
+    // CREATE new report
     const report = await Report.create({
-      userId: req.user.id,
-      userName: req.user.name || req.user.email || 'Anonymous',
+      userId:    req.user.id,
+      userName:  req.user.name || req.user.email || 'Anonymous',
       location,
-      address: address || '',
-      district: matchedDistrict?.name || 'Unknown',
+      address:   address || '',
+      district:  matchedDistrict?.name || 'Unknown',
       districtId: matchedDistrict?._id || null,
       description,
-      severity: severity || 'Medium',
+      severity:   severity || 'Medium',
       damageType: damageType || 'Unknown',
       aiConfidence: aiConfidence || 0,
-      aiVerified: aiVerified || false,
-      imageUrl: imageUrl || '',
+      aiVerified:   aiVerified || false,
+      imageUrl:     imageUrl || '',
       repairImageUrl: repairImageUrl || '',
       status: 'Reported',
       statusHistory: [{ oldStatus: null, newStatus: 'Reported', updatedByName: req.user.name, note: 'Report created' }],
@@ -146,17 +233,20 @@ router.post('/', requireAuth(), async (req, res) => {
     if (matchedDistrict?.adminId) {
       await createNotification(
         matchedDistrict.adminId,
-        `New ${severity || 'Medium'} severity road damage reported in ${matchedDistrict.name}: "${description.slice(0, 60)}${description.length > 60 ? '…' : ''}"`,
+        `New ${severity || 'Medium'} severity road damage reported in ${matchedDistrict.name}: "${description.slice(0, 60)}${description.length > 60 ? '...' : ''}"`,
         severity === 'Critical' ? 'critical_report' : 'new_report',
-        report._id,
-        req.io
+        report._id, req.io
       );
     }
 
     if (severity === 'Critical') {
       const superAdmins = await User.find({ role: 'super_admin' }).select('_id').lean();
       for (const sa of superAdmins) {
-        await createNotification(sa._id, `CRITICAL report in ${matchedDistrict?.name || 'Unknown'}: "${description.slice(0, 60)}…"`, 'critical_report', report._id, req.io);
+        await createNotification(
+          sa._id,
+          `CRITICAL report in ${matchedDistrict?.name || 'Unknown'}: "${description.slice(0, 60)}..."`,
+          'critical_report', report._id, req.io
+        );
       }
     }
 
@@ -165,7 +255,7 @@ router.post('/', requireAuth(), async (req, res) => {
       req.io.to('super_admin').emit('new_report', report);
     }
 
-    res.status(201).json({ report, duplicateWarning: duplicates.length > 0 ? `${duplicates.length} similar report(s) already exist nearby.` : null });
+    res.status(201).json({ report, merged: false, duplicateWarning: null });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -204,13 +294,23 @@ router.patch('/:id/status', requireAuth(['district_admin', 'super_admin']), asyn
 
     await report.save();
 
+    // Notify original reporter
     await createNotification(
       report.userId,
-      `Your road damage report "${report.description.slice(0, 50)}…" status updated: ${oldStatus} → ${status}`,
-      'status_changed',
-      report._id,
-      req.io
+      `Your road damage report "${report.description.slice(0, 50)}..." status updated: ${oldStatus} -> ${status}`,
+      'status_changed', report._id, req.io
     );
+
+    // Notify all users who confirmed the report
+    for (const c of report.confirmations || []) {
+      if (c.userId && c.userId.toString() !== report.userId.toString()) {
+        await createNotification(
+          c.userId,
+          `A road damage report you confirmed has been updated: ${oldStatus} -> ${status}`,
+          'status_changed', report._id, req.io
+        );
+      }
+    }
 
     if (req.io) {
       req.io.to(`district_${report.districtId}`).emit('status_updated', { reportId: report._id, status });

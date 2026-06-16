@@ -55,6 +55,46 @@ function StatusUpdateModal({ report, onClose, onUpdate }) {
   );
 }
 
+// ── Confirmation Details Panel (shown inline when row is expanded) ────────────
+function ConfirmationsPanel({ report }) {
+  const confirmations = report.confirmations || [];
+  if (confirmations.length === 0) return null;
+  return (
+    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '1rem', marginTop: 8 }}>
+      <p style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#0f172a', marginBottom: 8 }}>
+        🔗 {confirmations.length} Confirmation{confirmations.length > 1 ? 's' : ''} from other users
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {confirmations.map((c, i) => (
+          <div key={c._id || i} style={{ background: '#fff', borderRadius: 8, padding: '0.75rem', border: '1px solid #e2e8f0', display: 'flex', gap: 10 }}>
+            {/* Avatar */}
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: getAvatarGradient(c.userName), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+              {getInitials(c.userName)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: '#0f172a' }}>{c.userName}</span>
+                {c.severity && (
+                  <span style={{ fontSize: '0.625rem', fontWeight: 700, background: c.severity === 'Critical' ? '#fef2f2' : c.severity === 'High' ? '#fff7ed' : '#fffbeb', color: c.severity === 'Critical' ? '#dc2626' : c.severity === 'High' ? '#ea580c' : '#d97706', border: `1px solid ${c.severity === 'Critical' ? '#fecaca' : '#fed7aa'}`, padding: '1px 6px', borderRadius: 999 }}>
+                    {c.severity}
+                  </span>
+                )}
+                <span style={{ fontSize: '0.6875rem', color: '#94a3b8', marginLeft: 'auto' }}>{timeAgo(c.submittedAt)}</span>
+              </div>
+              {c.description && (
+                <p style={{ fontSize: '0.8125rem', color: '#475569', margin: '0 0 4px', lineHeight: 1.5 }} className="line-clamp-2">{c.description}</p>
+              )}
+              {c.imageUrl && (
+                <img src={c.imageUrl} alt="Confirmation photo" style={{ maxWidth: 120, borderRadius: 6, marginTop: 4, border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => window.open(c.imageUrl, '_blank')} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#64748b'];
 
 export default function DistrictAdminDashboard({ auth }) {
@@ -62,8 +102,9 @@ export default function DistrictAdminDashboard({ auth }) {
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ status: 'All', severity: 'All', search: '' });
+  const [filters, setFilters] = useState({ status: 'All', severity: 'All', search: '', mergedOnly: false });
   const [updateModal, setUpdateModal] = useState(null);
+  const [expandedRow, setExpandedRow] = useState(null); // report _id of expanded confirmations
   const [districtInfo, setDistrictInfo] = useState(null);
 
   const districtId = auth?.district?._id || auth?.district;
@@ -72,7 +113,7 @@ export default function DistrictAdminDashboard({ auth }) {
     setLoading(true);
     try {
       const [repRes, statRes] = await Promise.all([
-        authFetch(`${API_BASE_URL}/api/reports?limit=200&sort=-createdAt`),
+        authFetch(`${API_BASE_URL}/api/reports?limit=200&sort=-confirmationCount,-createdAt`),
         districtId ? authFetch(`${API_BASE_URL}/api/districts/${districtId}/stats`) : null,
       ]);
       if (repRes.ok) { const d = await repRes.json(); setReports(d.reports || []); }
@@ -85,6 +126,7 @@ export default function DistrictAdminDashboard({ auth }) {
   const filtered = reports.filter(r => {
     if (filters.status !== 'All' && r.status !== filters.status) return false;
     if (filters.severity !== 'All' && r.severity !== filters.severity) return false;
+    if (filters.mergedOnly && (!r.confirmationCount || r.confirmationCount === 0)) return false;
     if (filters.search && !r.description?.toLowerCase().includes(filters.search.toLowerCase()) && !r.district?.toLowerCase().includes(filters.search.toLowerCase())) return false;
     return true;
   });
@@ -102,6 +144,9 @@ export default function DistrictAdminDashboard({ auth }) {
 
   const bySeverityData = (stats?.bySeverity || []).map(s => ({ name: s._id, value: s.count }));
   const byStatusData = (stats?.byStatus || []).map(s => ({ name: s._id, value: s.count }));
+
+  // Count merged reports for badge
+  const mergedCount = reports.filter(r => r.confirmationCount > 0).length;
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: '📊' },
@@ -121,6 +166,11 @@ export default function DistrictAdminDashboard({ auth }) {
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {mergedCount > 0 && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 999, padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 5 }}>
+              🔗 {mergedCount} Merged Report{mergedCount > 1 ? 's' : ''}
+            </div>
+          )}
           {critical > 0 && (
             <div className="badge sev-critical" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
               🚨 {critical} Critical
@@ -186,7 +236,14 @@ export default function DistrictAdminDashboard({ auth }) {
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.severity === 'Critical' ? '#dc2626' : r.severity === 'High' ? '#ea580c' : r.severity === 'Medium' ? '#d97706' : '#16a34a', marginTop: 6, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: '0.8125rem', fontWeight: 500, color: '#0f172a', marginBottom: 2 }} className="line-clamp-1">{r.description}</p>
-                    <span className={getStatusClass(r.status)} style={{ fontSize: '0.5625rem' }}>{r.status}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span className={getStatusClass(r.status)} style={{ fontSize: '0.5625rem' }}>{r.status}</span>
+                      {r.confirmationCount > 0 && (
+                        <span style={{ fontSize: '0.5625rem', fontWeight: 700, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 999, padding: '1px 5px' }}>
+                          🔗 ×{r.confirmationCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span style={{ fontSize: '0.6875rem', color: '#94a3b8', flexShrink: 0 }}>{timeAgo(r.createdAt)}</span>
                 </div>
@@ -211,6 +268,19 @@ export default function DistrictAdminDashboard({ auth }) {
             <select className="input-field" style={{ width: 120 }} value={filters.severity} onChange={e => setFilters(f => ({ ...f, severity: e.target.value }))}>
               {['All', 'Critical', 'High', 'Medium', 'Low'].map(s => <option key={s}>{s}</option>)}
             </select>
+            {/* Merged-only filter */}
+            <button
+              onClick={() => setFilters(f => ({ ...f, mergedOnly: !f.mergedOnly }))}
+              style={{
+                padding: '6px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                background: filters.mergedOnly ? '#eff6ff' : '#f8fafc',
+                border: `1px solid ${filters.mergedOnly ? '#bfdbfe' : '#e2e8f0'}`,
+                color: filters.mergedOnly ? '#2563eb' : '#64748b',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              🔗 Merged only {filters.mergedOnly ? '✓' : ''}
+            </button>
           </div>
 
           {/* Reports Table */}
@@ -220,6 +290,7 @@ export default function DistrictAdminDashboard({ auth }) {
                 <thead>
                   <tr>
                     <th>Report</th>
+                    <th>Confirmations</th>
                     <th>Status</th>
                     <th>Severity</th>
                     <th>Citizen</th>
@@ -229,32 +300,60 @@ export default function DistrictAdminDashboard({ auth }) {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Loading…</td></tr>
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Loading…</td></tr>
                   ) : filtered.length === 0 ? (
-                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>No reports match your filters</td></tr>
-                  ) : filtered.map(r => (
-                    <tr key={r._id}>
-                      <td>
-                        <div style={{ maxWidth: 280 }}>
-                          <p style={{ fontWeight: 500, color: '#0f172a', fontSize: '0.875rem', marginBottom: 2 }} className="line-clamp-2">{r.description}</p>
-                          <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>📍 {r.district} {r.aiVerified ? '· 🤖 AI Verified' : ''}</p>
-                        </div>
-                      </td>
-                      <td><span className={getStatusClass(r.status)} style={{ fontSize: '0.625rem' }}>{r.status}</span></td>
-                      <td><span className={getSeverityClass(r.severity)} style={{ fontSize: '0.625rem' }}>{r.severity}</span></td>
-                      <td style={{ fontSize: '0.8125rem', color: '#475569' }}>{r.userName || '—'}</td>
-                      <td style={{ fontSize: '0.8125rem', color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(r.createdAt)}</td>
-                      <td>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setUpdateModal(r)}
-                          id={`update-status-${r._id}`}
-                        >
-                          Update
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>No reports match your filters</td></tr>
+                  ) : filtered.map(r => {
+                    const hasConfirmations = r.confirmationCount > 0;
+                    const isExpanded = expandedRow === r._id;
+                    return (
+                      <React.Fragment key={r._id}>
+                        <tr style={{ background: hasConfirmations ? '#f8fbff' : undefined }}>
+                          <td>
+                            <div style={{ maxWidth: 260 }}>
+                              <p style={{ fontWeight: 500, color: '#0f172a', fontSize: '0.875rem', marginBottom: 2 }} className="line-clamp-2">{r.description}</p>
+                              <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>📍 {r.district}{r.aiVerified ? ' · 🤖 AI Verified' : ''}</p>
+                            </div>
+                          </td>
+                          <td>
+                            {hasConfirmations ? (
+                              <button
+                                onClick={() => setExpandedRow(isExpanded ? null : r._id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem', color: '#2563eb' }}
+                                title="Click to view confirmations"
+                              >
+                                🔗 {r.confirmationCount} user{r.confirmationCount > 1 ? 's' : ''}
+                                <span style={{ fontSize: '0.5rem', marginLeft: 2 }}>{isExpanded ? '▲' : '▼'}</span>
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
+                            )}
+                          </td>
+                          <td><span className={getStatusClass(r.status)} style={{ fontSize: '0.625rem' }}>{r.status}</span></td>
+                          <td><span className={getSeverityClass(r.severity)} style={{ fontSize: '0.625rem' }}>{r.severity}</span></td>
+                          <td style={{ fontSize: '0.8125rem', color: '#475569' }}>{r.userName || '—'}</td>
+                          <td style={{ fontSize: '0.8125rem', color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(r.createdAt)}</td>
+                          <td>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setUpdateModal(r)}
+                              id={`update-status-${r._id}`}
+                            >
+                              Update
+                            </button>
+                          </td>
+                        </tr>
+                        {/* Inline confirmation details */}
+                        {isExpanded && hasConfirmations && (
+                          <tr style={{ background: '#f8fbff' }}>
+                            <td colSpan={7} style={{ padding: '0 1rem 1rem' }}>
+                              <ConfirmationsPanel report={r} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

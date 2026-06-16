@@ -298,14 +298,61 @@ export default function ReportForm({ auth }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Submission failed');
-      setSuccess({ reportId: data.report?._id, duplicateWarning: data.duplicateWarning });
+      setSuccess({ reportId: data.report?._id || data.parentReportId, merged: data.merged || false, confirmationCount: data.confirmationCount || 0, distanceMeters: data.distanceMeters || null });
     } catch (err) {
       setError(err.message);
     } finally { setSubmitting(false); }
   };
 
-  // ── Success State ──────────────────────────────────────────────────────────
+  // ── Success State ────────────────────────────────────────────────────────
   if (success) {
+    const isMerged = success.merged;
+    const resetForm = () => {
+      setSuccess(null); setStep(1); resetImage();
+      setLocation(null); setDescription(''); setSeverity('Medium');
+    };
+
+    if (isMerged) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', paddingTop: '5rem', background: 'var(--bg-base)' }}>
+          <div className="card animate-scale" style={{ padding: '3rem 2rem', maxWidth: 480, width: '100%', textAlign: 'center' }}>
+            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', border: '3px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', fontSize: '2.25rem', boxShadow: '0 8px 24px rgba(37,99,235,0.12)' }}>
+              🔗
+            </div>
+            <h2 className="font-display" style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Report Merged!</h2>
+            <p style={{ color: '#64748b', lineHeight: 1.6, marginBottom: '1.25rem' }}>
+              An existing report already exists nearby. Your details have been added as a confirmation to that report.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: '1.75rem', justifyContent: 'center' }}>
+              <div style={{ flex: 1, background: '#eff6ff', borderRadius: 12, padding: '0.875rem', border: '1px solid #bfdbfe' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563eb' }}>{success.confirmationCount}</div>
+                <div style={{ fontSize: '0.75rem', color: '#3b82f6', fontWeight: 600, marginTop: 2 }}>Total confirmations</div>
+              </div>
+              {success.distanceMeters !== null && (
+                <div style={{ flex: 1, background: '#f0fdf4', borderRadius: 12, padding: '0.875rem', border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#16a34a' }}>{success.distanceMeters}m</div>
+                  <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600, marginTop: 2 }}>From original report</div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', padding: '0.875rem', marginBottom: '1.75rem', textAlign: 'left' }}>
+              <p style={{ fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.6, margin: 0 }}>
+                Multiple confirmations signal to the district admin that this is a high-priority issue. The admin will be notified immediately.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => navigate('/dashboard')} className="btn btn-primary">📊 View Dashboard</button>
+              <button onClick={resetForm} className="btn btn-secondary">+ Report Another</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Newly created report
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', paddingTop: '5rem', background: 'var(--bg-base)' }}>
         <div className="card animate-scale" style={{ padding: '3rem 2rem', maxWidth: 480, width: '100%', textAlign: 'center' }}>
@@ -313,17 +360,12 @@ export default function ReportForm({ auth }) {
             ✅
           </div>
           <h2 className="font-display" style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Report Submitted!</h2>
-          <p style={{ color: '#64748b', marginBottom: success.duplicateWarning ? '0.5rem' : '1.75rem', lineHeight: 1.6 }}>
+          <p style={{ color: '#64748b', marginBottom: '1.75rem', lineHeight: 1.6 }}>
             Your road damage report has been received and will be reviewed by the district authority shortly.
           </p>
-          {success.duplicateWarning && (
-            <div className="alert alert-warning" style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
-              ⚠️ {success.duplicateWarning}
-            </div>
-          )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button onClick={() => navigate('/dashboard')} className="btn btn-primary">📊 Go to Dashboard</button>
-            <button onClick={() => { setSuccess(null); setStep(1); resetImage(); setLocation(null); setDescription(''); setSeverity('Medium'); }} className="btn btn-secondary">+ Report Another</button>
+            <button onClick={resetForm} className="btn btn-secondary">+ Report Another</button>
           </div>
         </div>
       </div>
