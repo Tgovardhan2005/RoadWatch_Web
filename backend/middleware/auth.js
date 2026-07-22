@@ -1,7 +1,5 @@
-const jwt = require('jsonwebtoken');
+const { verifyToken } = require('../config/jwt');
 const User = require('../models/User');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'DEV_CHANGE_ME';
 
 function requireAuth(role) {
   return async (req, res, next) => {
@@ -10,7 +8,7 @@ function requireAuth(role) {
     if (!token) return res.status(401).json({ message: 'Authentication required' });
 
     try {
-      const payload = jwt.verify(token, JWT_SECRET);
+      const payload = verifyToken(token);
       const user = await User.findById(payload.id).select('name email role district phone avatar');
       if (!user) return res.status(401).json({ message: 'User no longer exists' });
 

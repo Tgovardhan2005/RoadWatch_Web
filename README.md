@@ -1,106 +1,86 @@
-# RoadWatch 🛣️
+# RoadWatch v2 🛣️
 
-RoadWatch is a comprehensive web-based platform designed for managing, reporting, and tracking road damages (specifically tailored for Tamil Nadu). It empowers citizens to report road issues and provides administrators at both the district and super-admin levels with the necessary tools to manage, verify, and resolve these issues efficiently.
+**RoadWatch v2** is an AI-powered geospatial road damage management platform for Tamil Nadu. It enables citizens to report road issues with automated image verification and provides district and super-admin authorities with real-time dashboards to manage and resolve road infrastructure problems.
+
+---
 
 ## 🎯 Key Features
 
-- **Citizen Reporting:** Citizens can easily report road damage by uploading images along with their GPS location data.
-- **District Administration:** District Admins have dedicated dashboards to review, validate, and manage reports specific to their jurisdiction using geospatial routing.
-- **Global Monitoring:** Super Administrators get a global view of all districts to monitor user activity, track system health, and analyze overall metrics.
-- **Edge AI Image Validation:** Utilizes client-side Machine Learning (TensorFlow.js) to instantly validate uploaded images, ensuring they contain road damage before submission, reducing backend load and preventing spam.
-- **Real-time Synchronization:** Built with Socket.IO for live updates on report statuses, ensuring instant communication between admins and citizens.
-- **Automated Duplicate Detection:** Leverages Haversine distance calculations to automatically detect and group duplicate reports within a 100-meter radius.
+- **📸 Citizen Reporting & AI Verification:** Citizens upload road damage photos auto-verified by YOLOv8 deep learning.
+- **🤖 YOLOv8 AI Detection:** Detects damage types (potholes, cracks, surface damage, waterlogging, construction damage) and severity.
+- **📍 Geospatial District Routing:** Uses Turf.js point-in-polygon matching to route reports to the correct district administration.
+- **🔗 Automatic Duplicate Merging:** Merges nearby reports within 100 meters using Haversine distance calculations.
+- **🏢 District & Super-Admin Dashboards:** Real-time dashboards with analytics, severity distribution, and status tracking.
+- **⚡ Real-Time Socket.IO Updates:** Live push notifications when report statuses change.
+- **🛡️ Backend Geocoding Proxy & Security:** Centralized JWT authentication and server-side reverse geocoding via OpenStreetMap.
 
 ---
 
 ## 🏗 Architecture & Tech Stack
 
-The project follows a modern MERN-stack architecture, supplemented by real-time features and machine learning models.
+- **Frontend:** React 18, Vite, React Router, Leaflet Maps, Recharts, Socket.IO Client
+- **Backend:** Node.js, Express, MongoDB (Mongoose), JWT, Turf.js, Socket.IO Server
+- **AI Microservice:** Python Flask, Ultralytics YOLOv8 (`roadwatch_yolov8_final_87_percent.pt`)
 
-### Frontend
-- **Framework:** React 18 (Vite)
-- **Routing:** React Router
-- **Maps:** Leaflet & React-Leaflet
-- **Data Visualization:** Recharts
-- **Machine Learning:** TensorFlow.js (`@tensorflow/tfjs`) with pre-trained Keras models
-- **Real-time:** Socket.IO Client
+### Microservices & Ports
 
-### Backend
-- **Environment:** Node.js & Express
-- **Database:** MongoDB (Mongoose)
-- **Authentication:** JWT & bcrypt
-- **Geospatial Processing:** Turf.js (Point-in-Polygon for district routing)
-- **File Processing:** Multer & Sharp (Image optimization)
-- **Real-time:** Socket.IO Server
-
-### Machine Learning
-- **Models:** CNN-based image classification for Road/Not-Road detection and Damage Classification.
-- **Scripts:** `create_damage_model.py` (Training) and `model_server.py` (Inference API).
+| Service | Stack | Port |
+| :--- | :--- | :--- |
+| **Frontend** | React 18 + Vite | `3000` |
+| **Backend API** | Node.js + Express + MongoDB | `5002` |
+| **AI Microservice** | Python Flask + YOLOv8 | `5000` |
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
+- Node.js (v18+)
+- Python (v3.9+) with `flask`, `flask-cors`, `ultralytics`, `pillow`, `torch`
+- MongoDB (Local or Atlas)
 
-Ensure you have the following installed:
-- [Node.js](https://nodejs.org/) (v16 or higher recommended)
-- [MongoDB](https://www.mongodb.com/) (Local instance or MongoDB Atlas URI)
+### Setup & Run
 
-### Installation
+#### 1. Backend (Port 5002)
+```bash
+cd backend
+npm install
+npm start
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd "RW v2"
-   ```
+#### 2. AI Microservice (Port 5000)
+```bash
+cd Yolov8
+pip install flask flask-cors ultralytics pillow torch
+python app.py
+```
 
-2. **Backend Setup:**
-   Navigate to the backend directory, install dependencies, configure environment variables, and start the server.
-   ```bash
-   cd backend
-   npm install
-   
-   # Create a .env file based on environment requirements (e.g., PORT, MONGO_URI, JWT_SECRET)
-   # Start the backend development server
-   npm run dev
-   ```
+#### 3. Frontend (Port 3000)
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-3. **Frontend Setup:**
-   Open a new terminal, navigate to the frontend directory, install dependencies, and start the Vite development server.
-   ```bash
-   cd frontend
-   npm install
-   
-   # Start the frontend application
-   npm run dev
-   ```
-
-The frontend application should now be accessible at `http://localhost:5173` (or the port specified by Vite), and the backend server will run on its configured port.
-
----
-
-## 👥 User Roles
-
-- **Citizens:** Register, log in, capture photos of road damage, and submit reports with auto-captured GPS coordinates. Track the status of submitted reports.
-- **District Administrators:** Monitor a localized dashboard displaying reports within their specific district (e.g., Chennai, Coimbatore). Update statuses and coordinate repairs in real-time.
-- **Super Administrators:** Access comprehensive analytics, oversee all districts, manage user accounts, and view global system metrics.
+Open `http://localhost:3000` in your browser.
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-Roadwatch/
-├── backend/                  # Express Node.js Server API
-│   ├── middleware/           # Authentication & validation
-│   ├── models/               # MongoDB Schemas
-│   ├── routes/               # API endpoints
-│   └── server.js             # Main entry point
-├── frontend/                 # React Web Application
-│   ├── public/               # Static assets & ML model files (*.keras)
+RW v2/
+├── backend/                  # Express API Server (Port 5002)
+│   ├── config/               # Centralized JWT config (jwt.js)
+│   ├── middleware/           # Auth middlewares
+│   ├── models/               # MongoDB models (Report, User, District, Notification)
+│   ├── routes/               # Express endpoints (auth, reports, districts, admin, ai)
+│   └── server.js             # Server entry point
+├── frontend/                 # React Web App (Port 3000)
 │   ├── src/                  # React components, routing, and utilities
-│   └── vite.config.js        # Vite configuration
+│   └── vite.config.js        # Vite dev server & proxy routes
+├── Yolov8/                   # Flask YOLOv8 AI Service (Port 5000)
+│   ├── app.py                # Flask app (/analyze-road, /health)
+│   └── roadwatch_yolov8_final_87_percent.pt # YOLOv8 model weights
+└── README.md                 # Project overview and guide
 ```
-
-For more in-depth technical details on the algorithms (Point-in-Polygon routing, Haversine duplicate detection, and CNN ML integration), please refer to the `PROJECT_OVERVIEW.md` file.

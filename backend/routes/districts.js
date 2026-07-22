@@ -29,8 +29,36 @@ router.get('/with-boundary', async (req, res) => {
   }
 });
 
+// GET /api/districts/geocode — Backend proxy for OpenStreetMap Nominatim reverse geocoding
+router.get('/geocode', async (req, res) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ message: 'lat and lng parameters are required' });
+    }
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&format=json`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'RoadWatch-App/2.0 (contact@roadwatch.local)',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!response.ok) {
+      return res.status(500).json({ message: 'Geocoding service unavailable' });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // GET /api/districts/:id
 router.get('/:id', async (req, res) => {
+  const { Types } = require('mongoose');
+  if (!Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ message: 'Invalid district ID' });
+  }
   try {
     const d = await District.findById(req.params.id).populate('adminId', 'name email').lean();
     if (!d) return res.status(404).json({ message: 'District not found' });

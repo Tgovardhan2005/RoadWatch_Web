@@ -34,8 +34,7 @@ const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST', 'PATCH', 'DELETE'] },
 });
 
-const port = process.env.PORT || 5002;
-const JWT_SECRET = process.env.JWT_SECRET || 'DEV_CHANGE_ME';
+const { JWT_SECRET, verifyToken } = require('./config/jwt');
 
 // ── Middleware ─────────────────────────────────────────────────────────────────
 app.use(cors());
@@ -65,7 +64,7 @@ io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next();
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = verifyToken(token);
     socket.user = payload;
     next();
   } catch {

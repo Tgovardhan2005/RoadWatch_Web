@@ -6,6 +6,7 @@ import { getToken, getUser, saveUser, authFetch, logout } from './auth';
 import API_BASE_URL from './config';
 
 import GlobalHeader from './components/Layout/GlobalHeader';
+import ErrorBoundary from './components/Layout/ErrorBoundary';
 import LandingPage from './components/Landing/LandingPage';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -226,8 +227,10 @@ function AppContent() {
 
 export default function RootApp() {
   return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

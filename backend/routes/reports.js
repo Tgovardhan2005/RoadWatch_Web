@@ -29,6 +29,9 @@ router.get('/', async (req, res) => {
 
     let query = {};
 
+    const isAdmin = auth && ['district_admin', 'super_admin'].includes(auth.role);
+    const isFetchingOwnReports = auth && auth.role === 'citizen' && myReports === 'true';
+
     if (auth) {
       if (auth.role === 'district_admin') {
         query.districtId = auth.district;
@@ -39,7 +42,17 @@ router.get('/', async (req, res) => {
       }
     }
 
-    if (status && status !== 'All') query.status = status;
+    if (status && status !== 'All') {
+      if (status === 'Rejected' && !isAdmin && !isFetchingOwnReports) {
+        // Non-admin querying rejected reports of other users -> return empty
+        return res.json({ reports: [], total: 0, page: 1, pages: 0 });
+      }
+      query.status = status;
+    } else if (!isAdmin && !isFetchingOwnReports) {
+      // Make sure rejected reports are NOT shown to other users / public feeds
+      query.status = { $ne: 'Rejected' };
+    }
+
     if (severity && severity !== 'All') query.severity = severity;
     if (district && district !== 'All') query.district = district;
     if (search) {
@@ -72,6 +85,8 @@ router.get('/stats', requireAuth(), async (req, res) => {
       match.districtId = new Types.ObjectId(String(auth.district));
     } else if (auth.role === 'citizen') {
       match.userId = new Types.ObjectId(String(auth.id));
+    } else if (auth.role !== 'super_admin') {
+      match.status = { $ne: 'Rejected' };
     }
 
     const [statusCounts, severityCounts, monthlyTrend, totalResolved] = await Promise.all([
@@ -97,6 +112,16 @@ router.get('/:id', async (req, res) => {
   try {
     const report = await Report.findById(req.params.id).lean();
     if (!report) return res.status(404).json({ message: 'Report not found' });
+
+    if (report.status === 'Rejected') {
+      const auth = req.user;
+      const isOwner = auth && report.userId.toString() === auth.id;
+      const isAdmin = auth && ['district_admin', 'super_admin'].includes(auth.role);
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ message: 'Access denied: Rejected reports are not visible to other users.' });
+      }
+    }
+
     res.json(report);
   } catch (e) {
     res.status(500).json({ message: e.message });

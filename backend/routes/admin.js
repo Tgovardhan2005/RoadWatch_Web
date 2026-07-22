@@ -1,13 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const District = require('../models/District');
 const Report = require('../models/Report');
 const { requireAuth } = require('../middleware/auth');
+const { signToken } = require('../config/jwt');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'DEV_CHANGE_ME';
 
 // GET /api/admin/district-admins
 router.get('/district-admins', requireAuth('super_admin'), async (req, res) => {
@@ -30,6 +29,9 @@ router.post('/district-admins', requireAuth('super_admin'), async (req, res) => 
     if (!name || !email || !password || !districtId) {
       return res.status(400).json({ message: 'Name, email, password and districtId required' });
     }
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+    }
     const normalEmail = email.trim().toLowerCase();
     if (await User.findOne({ email: normalEmail })) {
       return res.status(409).json({ message: 'Email already registered' });
@@ -42,7 +44,7 @@ router.post('/district-admins', requireAuth('super_admin'), async (req, res) => 
 
     await District.findByIdAndUpdate(districtId, { adminId: admin._id });
 
-    const token = jwt.sign({ id: admin._id, email: admin.email, role: admin.role, name: admin.name }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(admin);
     res.status(201).json({ admin: { id: admin._id, name, email: normalEmail, role: 'district_admin', district }, token });
   } catch (e) {
     res.status(500).json({ message: e.message });

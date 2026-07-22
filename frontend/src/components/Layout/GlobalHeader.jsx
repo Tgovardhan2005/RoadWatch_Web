@@ -265,7 +265,7 @@ export default function GlobalHeader({ auth, setAuth }) {
                           id={item.id}
                           onClick={() => { navigate(item.path); setDropdownOpen(false); }}
                           className="btn-ghost"
-                          style={{ width: '100%', justifyContent: 'flex-start', padding: '9px 12px', borderRadius: 8, gap: 10, fontSize: '0.875rem', border: 'none' }}
+                          style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'flex-start', padding: '9px 12px', borderRadius: 8, gap: 10, fontSize: '0.875rem', border: 'none' }}
                         >
                           <span>{item.icon}</span> {item.label}
                           {item.label === 'Notifications' && unreadCount > 0 && (

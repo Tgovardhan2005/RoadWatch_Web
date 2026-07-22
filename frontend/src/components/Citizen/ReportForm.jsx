@@ -230,81 +230,43 @@ export default function ReportForm({ auth }) {
       setImage(b64);
       setAiLoading(true);
       try {
-                // AI Analysis: road filter + damage type classifier (single /analyze call)
-        let aiAnalysis = null;
-        try {
-          aiAnalysis = await analyzeImage(b64);
-        } catch (modelErr) {
-          console.warn('[AI] Model server error:', modelErr.message);
-        }
+        // Call backend AI endpoint (/api/ai/verify), which uses YOLOv8 new AI microservice
+        const res = await fetch(`${API_BASE_URL}/api/ai/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: b64 }),
+        });
 
-        // Stage 1: Road filter — block non-road images
-        if (aiAnalysis && !aiAnalysis.fallback && !aiAnalysis.isRoad && aiAnalysis.filterConfidence > 0.6) {
+        if (res.ok) {
+          const aiData = await res.json();
+          setAiResult(aiData);
+          if (aiData.valid && aiData.damageType && !['Invalid Image', 'No Damage', 'Unknown'].includes(aiData.damageType)) {
+            setDamageType(aiData.damageType);
+          }
+        } else {
+          // Fallback to local analyzeImage helper
+          const aiAnalysis = await analyzeImage(b64);
           setAiResult({
-            valid: false,
-            damageType: 'Invalid Image',
-            confidence: aiAnalysis.filterConfidence,
-            reason: "This doesn't look like a road photo. Please upload a clear photo of the road surface.",
-            source: 'keras_filter',
+            valid: aiAnalysis.isRoad && aiAnalysis.damageType !== 'No Damage',
+            damageType: aiAnalysis.damageType || 'Surface Damage',
+            confidence: aiAnalysis.damageConfidence || aiAnalysis.filterConfidence || 0.75,
+            reason: aiAnalysis.isRoad ? 'Road damage detected by AI.' : 'No clear road damage detected.',
+            source: aiAnalysis.source || 'yolov8_model',
           });
-          setAiLoading(false);
-          return;
-        }
-
-        // Stage 2: Damage type from AI classifier
-        const classifierDamageType = aiAnalysis?.damageType && aiAnalysis.damageType !== 'No Damage'
-          ? aiAnalysis.damageType : null;
-        const classifierTop3 = aiAnalysis?.top3 || [];
-
-        // Also call heuristic backend for fallback validation
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/ai/verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageBase64: b64 }),
-          });
-          if (res.ok) {
-            const heurData = await res.json();
-            const finalDamageType = classifierDamageType || heurData.damageType || 'Unknown';
-            const merged = {
-              ...heurData,
-              damageType: finalDamageType,
-              source: aiAnalysis && !aiAnalysis.fallback ? 'keras_classifier' : 'heuristic',
-              kerasVerified: aiAnalysis?.isRoad ?? null,
-              kerasConfidence: aiAnalysis?.filterConfidence ?? null,
-              damageConfidence: aiAnalysis?.damageConfidence || 0,
-              top3: classifierTop3,
-              confidence: aiAnalysis?.isRoad
-                ? Math.min(0.99, (heurData.confidence || 0.5) + 0.08)
-                : (heurData.confidence || 0.5),
-            };
-            setAiResult(merged);
-            if (merged.valid && finalDamageType && !['Invalid Image','No Damage','Unknown'].includes(finalDamageType)) {
-              setDamageType(finalDamageType);
-            }
-          }
-        } catch (_heurErr) {
-          // Heuristic unavailable — use classifier result only
-          if (aiAnalysis && !aiAnalysis.fallback) {
-            const finalDamageType = classifierDamageType || 'Unknown';
-            const isValid = aiAnalysis.isRoad && finalDamageType !== 'No Damage';
-            setAiResult({
-              valid: isValid,
-              damageType: finalDamageType,
-              confidence: aiAnalysis.damageConfidence || aiAnalysis.filterConfidence || 0.5,
-              reason: isValid ? 'Road damage detected by AI.' : 'No significant damage detected.',
-              source: 'keras_classifier',
-              top3: classifierTop3,
-              kerasVerified: aiAnalysis.isRoad,
-              kerasConfidence: aiAnalysis.filterConfidence,
-              damageConfidence: aiAnalysis.damageConfidence || 0,
-            });
-            if (isValid) setDamageType(finalDamageType);
-          }
         }
       } catch (err) {
-        console.warn('[AI] Analysis error:', err.message);
-        // Non-fatal — allow upload without AI
+        console.warn('[AI] Image analysis error:', err.message);
+        // Direct local AI helper fallback
+        try {
+          const aiAnalysis = await analyzeImage(b64);
+          setAiResult({
+            valid: aiAnalysis.isRoad,
+            damageType: aiAnalysis.damageType || 'Surface Damage',
+            confidence: aiAnalysis.damageConfidence || 0.75,
+            reason: 'Road damage analyzed by model.',
+            source: aiAnalysis.source || 'yolov8_model',
+          });
+        } catch (_) { /* silent */ }
       } finally {
         setAiLoading(false);
       }
@@ -329,7 +291,7 @@ export default function ReportForm({ auth }) {
         const { latitude, longitude } = pos.coords;
         setLocation({ latitude, longitude });
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+          const res = await fetch(`${API_BASE_URL}/api/districts/geocode?lat=${latitude}&lng=${longitude}`);
           const data = await res.json();
           if (data.display_name) setAddress(data.display_name);
           const addr = data.address || {};

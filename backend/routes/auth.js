@@ -1,16 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const District = require('../models/District');
 const { requireAuth } = require('../middleware/auth');
+const { signToken } = require('../config/jwt');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'DEV_CHANGE_ME';
-
-function signToken(user) {
-  return jwt.sign({ id: user._id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
-}
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -18,6 +14,14 @@ router.post('/register', async (req, res) => {
     let { name, email, password, phone } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: 'Name, email & password required' });
     email = email.trim().toLowerCase();
+
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+    }
+
     if (await User.findOne({ email })) return res.status(409).json({ message: 'Email already registered' });
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ name: name.trim(), email, passwordHash, role: 'citizen', phone: phone || '' });

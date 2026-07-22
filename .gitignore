@@ -4,7 +4,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-package-lock.json
 
 # ── Environment Variables ─────────────────────────────────────────────────────
 .env
@@ -19,29 +18,30 @@ dist/
 build/
 .vite/
 
-# ── Logs ──────────────────────────────────────────────────────────────────────
+# ── Logs & User Uploads ───────────────────────────────────────────────────────
 logs/
 *.log
 uploads/
 
-# ── ML / Python ───────────────────────────────────────────────────────────────
-# Original Keras model — large binary, don't commit
+# ── ML / Python / YOLOv8 ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+runs/
+*_savedmodel_tmp/
+*.pt
+*.onnx
+*.engine
 *.keras
 *.h5
 *.pkl
 *.joblib
-__pycache__/
-*.py[cod]
-.ipynb_checkpoints/
 
-# TF SavedModel temp directory from conversion
-frontend/public/model/_savedmodel_tmp/
-
-# ── TF.js converted model — DO commit these (needed for browser inference) ────
-# frontend/public/model/model.json       → committed ✓
-# frontend/public/model/*.bin            → committed ✓
-
-# ── OS / Editor ───────────────────────────────────────────────────────────────
+# ── OS & IDE ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 .vscode/settings.json
@@ -49,3 +49,4 @@ Thumbs.db
 *.swp
 *.swo
 desktop.ini
+.gemini/

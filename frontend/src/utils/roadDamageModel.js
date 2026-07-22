@@ -26,10 +26,10 @@ export async function getModelStatus() {
       _serverOnline = true;
       return {
         online:              true,
-        filterLoaded:        data.filter_loaded,
-        classifierLoaded:    data.classifier_loaded,
-        classifierReady:     data.classifier_ready,
-        damageClasses:       data.damage_classes || [],
+        filterLoaded:        data.filter_loaded ?? data.model_loaded ?? false,
+        classifierLoaded:    data.classifier_loaded ?? data.model_loaded ?? false,
+        classifierReady:     data.classifier_ready ?? data.model_loaded ?? false,
+        damageClasses:       data.damage_classes || (data.classes ? Object.values(data.classes) : []),
       };
     }
   } catch { /* server not running */ }
@@ -56,7 +56,48 @@ export async function analyzeImage(base64) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    // 1. Try New YOLOv8 AI Service (/analyze-road)
+    const res = await fetch('/analyze-road', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64 }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        _serverOnline = true;
+        const isRoad = !!data.store_in_db;
+        const formattedType = data.prediction && data.prediction !== 'not_road'
+          ? data.prediction.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+          : null;
+        return {
+          isRoad,
+          filterConfidence: data.confidence || 0.85,
+          damageType: formattedType,
+          damageConfidence: data.confidence || 0.85,
+          total_damages: data.total_damages || 0,
+          detections: data.detections || [],
+          store_in_db: data.store_in_db,
+          source: 'yolov8_new_ai_service',
+          top3: data.detections && data.detections.length > 0 ? [
+            { label: formattedType || 'Road Damage', confidence: data.confidence || 0.85 }
+          ] : [],
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[AI] /analyze-road unavailable, trying fallback...', err.message);
+  }
+
+  // 2. Legacy /analyze endpoint fallback
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
     const res = await fetch(ANALYZE_URL, {
       method: 'POST',
@@ -69,24 +110,8 @@ export async function analyzeImage(base64) {
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     const data = await res.json();
     _serverOnline = true;
-
-    if (data.fallback) {
-      console.warn('[AI] Model server returned fallback');
-      return { isRoad: true, filterConfidence: 0, damageType: null, damageConfidence: 0, top3: [], source: 'fallback', fallback: true };
-    }
-
-    console.log(`[AI] Road filter: ${data.isRoad ? 'Road' : 'Not Road'} (${(data.filterConfidence * 100).toFixed(0)}%)`);
-    if (data.damageType) {
-      console.log(`[AI] Damage type: ${data.damageType} (${(data.damageConfidence * 100).toFixed(0)}%)`);
-    }
     return data;
-
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.warn('[AI] Server timeout');
-    } else {
-      console.warn('[AI] Server unavailable:', err.message);
-    }
     _serverOnline = false;
     return { isRoad: true, filterConfidence: 0, damageType: null, damageConfidence: 0, top3: [], source: 'fallback', fallback: true };
   }

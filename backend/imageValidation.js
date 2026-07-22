@@ -4,12 +4,58 @@
  */
 const sharp = require('sharp');
 
-async function analyzeImage(base64Image) {
-  try {
-    if (!base64Image || base64Image.length < 100) {
-      return { valid: false, damageType: 'Invalid Image', confidence: 0, reason: 'No image provided' };
-    }
+function formatDamageType(dt) {
+  if (!dt || dt === 'not_road') return 'Invalid Image';
+  if (dt === 'road_damage') return 'Surface Damage';
+  // Capitalize words (e.g. pothole -> Pothole, construction_damage -> Construction Damage)
+  const cleaned = dt.replace(/_/g, ' ');
+  return cleaned.replace(/\b\w/g, l => l.toUpperCase());
+}
 
+async function analyzeImage(base64Image) {
+  if (!base64Image || base64Image.length < 100) {
+    return { valid: false, damageType: 'Invalid Image', confidence: 0, reason: 'No image provided' };
+  }
+
+  // 1. Try calling the New YOLOv8 AI Service (port 5000)
+  const aiServiceUrl = process.env.NEW_AI_SERVICE_URL || 'http://localhost:5000/analyze-road';
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const response = await fetch(aiServiceUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64Image }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        const formattedType = formatDamageType(data.prediction);
+        const isValid = !!data.store_in_db;
+        return {
+          valid: isValid,
+          damageType: formattedType,
+          confidence: parseFloat((data.confidence || 0).toFixed(3)),
+          total_damages: data.total_damages || 0,
+          detections: data.detections || [],
+          store_in_db: data.store_in_db,
+          source: 'yolov8_new_ai_service',
+          reason: isValid
+            ? `YOLOv8 AI verified road damage: ${formattedType} (${data.total_damages} detection(s)).`
+            : 'YOLOv8 AI did not detect valid road damage in this image.',
+        };
+      }
+    }
+  } catch (aiErr) {
+    console.warn('[AI] New YOLOv8 AI service unavailable, using Sharp heuristic fallback:', aiErr.message);
+  }
+
+  // 2. Fallback: Sharp Heuristic Pixel Analysis
+  try {
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
@@ -72,6 +118,8 @@ async function analyzeImage(base64Image) {
       valid, damageType,
       confidence: parseFloat(confidence.toFixed(3)),
       reason,
+      store_in_db: valid,
+      source: 'heuristic',
       meta: { mean: mean.toFixed(1), stdDev: stdDev.toFixed(1), darkRatio: darkRatio.toFixed(3), edgeRatio: edgeRatio.toFixed(3) },
     };
   } catch (err) {
